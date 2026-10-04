@@ -1,0 +1,30 @@
+# Standalone project: own network, own volumes, no references to other containers.
+name: ctrader-lab
+
+services:
+  lab:
+    build:
+      context: .
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: ctrader-lab:latest
+    container_name: ctrader-lab
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CTLAB_GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    ports:
+      - "${CTLAB_WEB_PORT:-8088}:8088"
+    volumes:
+      - ./data:/data
+      - ./results:/results
+      - ./config:/app/config:ro
+    mem_limit: ${CTLAB_MEM_LIMIT:-2g}
+    cpus: ${CTLAB_CPUS:-2}
+    networks: [ctlab]
+
+networks:
+  ctlab:
+    name: ctlab

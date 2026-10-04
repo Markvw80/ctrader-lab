@@ -1,0 +1,34 @@
+# IC Markets cTrader, Raw account.
+# Commission, swap and spread are defaults until phase 6: the Open API symbol
+# entity (ProtoOASymbol) provides the real commission/swap values, and the
+# spread model is calibrated from API bid/ask ticks. Those values then override these.
+symbol: XAUUSD
+contract_size: 100        # oz per 1.00 lot
+tick_size: 0.01
+digits: 2
+pip_size: 0.1             # convention: 1 pip = 0.10 USD price move on gold
+min_lot: 0.01
+lot_step: 0.01
+quote_currency: USD       # account is USD: no FX conversion needed
+
+costs:
+  commission:
+    # cTrader charges on traded notional: 3 USD per 100k USD per side.
+    # 1.00 lot at 2600 = 260k notional = 7.80 USD per side.
+    type: usd_per_million_notional
+    value_per_side: 30
+  slippage_ticks: 2                  # applied adversely to market/stop fills
+  spread:
+    model: hourly                    # per UTC hour, calibrated from API ticks
+    default_points: 20               # 0.20 USD fallback until calibrated
+  swap:
+    # Conservative placeholders (both sides cost money). Replaced by API values.
+    long_per_lot: -50.0              # USD per lot per night
+    short_per_lot: -20.0
+    triple_day: wednesday
+
+# Strategies trade London and New York. Asia is kept as a reporting bucket only.
+sessions:                            # local times, DST handled via timezone
+  asia:    {tz: "Asia/Tokyo",       start: "08:00", end: "16:00", tradable: false}
+  london:  {tz: "Europe/London",    start: "08:00", end: "16:30", tradable: true}
+  newyork: {tz: "America/New_York", start: "08:00", end: "17:00", tradable: true}

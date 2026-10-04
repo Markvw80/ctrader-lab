@@ -1,0 +1,20 @@
+# Global defaults. Values here are overridable per run via CLI flags.
+data:
+  base_timeframe: M1      # higher timeframes are resampled from M1
+  store_ticks: false      # ticks optional, partitioned per month
+
+account:
+  currency: USD
+  initial_balance: 10000
+  risk_per_trade_pct: 0.5
+  daily_loss_limit_pct: 2.0
+  # Trading day starts at the New York 17:00 rollover (21:00/22:00 UTC, DST-aware).
+  day_start: {tz: "America/New_York", time: "17:00"}
+
+optimization:
+  holdout_pct: 20
+  wf_in_sample_months: 12
+  wf_out_of_sample_months: 3
+  min_trades_per_window: 30
+  not_robust_oos_is_ratio: 0.5
+  n_jobs: 1
