@@ -23,7 +23,9 @@ COPY config ./config
 COPY README.md ./
 RUN uv sync --frozen --no-dev
 
-RUN groupadd -g ${PGID} ctlab && useradd -u ${PUID} -g ${PGID} -m ctlab \
+# The NAS group id may already exist in the base image (e.g. gid 10 = uucp): reuse it then.
+RUN (getent group ${PGID} >/dev/null || groupadd -g ${PGID} ctlab) \
+    && useradd -u ${PUID} -g ${PGID} -m ctlab \
     && mkdir -p /data /results && chown ctlab:ctlab /data /results
 USER ctlab
 

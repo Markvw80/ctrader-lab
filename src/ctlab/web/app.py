@@ -29,12 +29,17 @@ COMPARE_ROWS = [
 ]
 
 
+def _extra_networks() -> list:
+    raw = env().ctlab_web_allow_cidrs
+    return [ipaddress.ip_network(c.strip(), strict=False) for c in raw.split(",") if c.strip()]
+
+
 @app.middleware("http")
 async def lan_only(request: Request, call_next):
     host = request.client.host if request.client else ""
     try:
         ip = ipaddress.ip_address(host)
-        allowed = ip.is_private or ip.is_loopback
+        allowed = ip.is_private or ip.is_loopback or any(ip in n for n in _extra_networks())
     except ValueError:
         allowed = host in ("testclient", "localhost")
     if not allowed:

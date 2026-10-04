@@ -17,42 +17,30 @@ weigert tenzij `CTRADER_ENV=demo`.
 
 ## Op de NAS starten (UGREEN DXP2800)
 
-Eenmalig, via SSH op de NAS. De repo is privé, dus de NAS krijgt een eigen read-only deploy key:
+De NAS heeft geen git nodig. Vanaf je Mac (met SSH-host `nas` in `~/.ssh/config`):
 
 ```sh
-ssh-keygen -t ed25519 -f ~/.ssh/ctrader_lab_deploy -N ""
-cat ~/.ssh/ctrader_lab_deploy.pub
-# -> github.com/Markvw80/ctrader-lab/settings/keys -> Add deploy key (zonder write access)
-cat >> ~/.ssh/config <<'CFG'
-Host github-ctrader-lab
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/ctrader_lab_deploy
-    IdentitiesOnly yes
-CFG
+./scripts/deploy-nas.sh
 ```
 
-Daarna:
+Dit script:
+1. weigert als er niet-gecommitte wijzigingen zijn (gedeployde code = altijd een commit);
+2. kopieert de code van die commit naar `/volume1/docker/ctrader-lab` (rsync). `data/`,
+   `results/` en `.env` op de NAS worden nooit aangeraakt;
+3. maakt bij de eerste keer `.env` aan uit `.env.example` (rechten 600, PUID/PGID van jouw
+   NAS-gebruiker);
+4. bouwt en start de container met de commit-hash in het image (`docker compose up -d --build`).
 
-```sh
-cd /volume1/docker
-git clone github-ctrader-lab:Markvw80/ctrader-lab.git ctrader-lab
-cd ctrader-lab
-cp .env.example .env
-id                        # zet PUID/PGID in .env op jouw uid/gid
-vi .env                   # vul later de cTrader-credentials in
-./scripts/deploy.sh
-```
+Credentials invullen op de NAS: `ssh nas`, dan `vi /volume1/docker/ctrader-lab/.env`, daarna
+`cd /volume1/docker/ctrader-lab && docker compose up -d` om ze te laden.
 
-`deploy.sh` doet `git pull`, stempelt de git-commit in het image (voor reproduceerbare runs)
-en draait `docker compose up -d --build`.
-
-- Webpagina: `http://<nas-ip>:8088` (alleen LAN; open deze poort niet naar internet)
-- Health: `http://<nas-ip>:8088/health`
+- Webpagina: `http://<nas-ip>:8088` (alleen LAN; open deze poort niet naar internet).
+  Via Tailscale: zet `CTLAB_WEB_ALLOW_CIDRS=100.64.0.0/10` in `.env`.
 - Data en resultaten staan in `./data` en `./results` en overleven een rebuild.
-- Config (`./config`) is read-only gemount: aanpassen kan zonder rebuild.
+- Config (`./config`) is read-only gemount: aanpassen kan zonder rebuild (wel: `docker compose restart`).
 - Resources: begrensd via `CTLAB_MEM_LIMIT` en `CTLAB_CPUS` in `.env`.
 - Eigen compose-project (`ctrader-lab`) en eigen netwerk (`ctlab`); raakt geen andere containers.
+- Alternatief met git op de NAS: `scripts/deploy.sh` (doet `git pull` + build).
 
 ### CLI gebruiken
 
@@ -64,8 +52,8 @@ docker compose exec lab ctlab info
 ### Updaten / stoppen
 
 ```sh
-./scripts/deploy.sh       # nieuwe versie
-docker compose down       # stoppen (data blijft staan)
+./scripts/deploy-nas.sh   # vanaf de Mac: nieuwe versie
+docker compose down       # op de NAS: stoppen (data blijft staan)
 ```
 
 ## Data

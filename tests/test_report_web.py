@@ -78,3 +78,12 @@ def test_web_refuses_public_addresses(runs):
     assert TestClient(app, client=("8.8.8.8", 5000)).get("/").status_code == 403
     assert TestClient(app, client=("192.168.2.20", 5000)).get("/").status_code == 200
     assert TestClient(app, client=("172.18.0.1", 5000)).get("/health").status_code == 200
+
+
+def test_web_extra_allowed_networks(runs, monkeypatch):
+    from ctlab.web.app import app
+    assert TestClient(app, client=("100.101.102.103", 5000)).get("/").status_code == 403
+    monkeypatch.setenv("CTLAB_WEB_ALLOW_CIDRS", "100.64.0.0/10")
+    env.cache_clear()
+    assert TestClient(app, client=("100.101.102.103", 5000)).get("/").status_code == 200
+    assert TestClient(app, client=("8.8.8.8", 5000)).get("/").status_code == 403

@@ -23,6 +23,7 @@ class Env(BaseSettings):
     ctlab_results_dir: Path = Field(default=Path("results"))
     ctlab_config_dir: Path = Field(default=Path("config"))
     ctlab_git_commit: str = "unknown"
+    ctlab_web_allow_cidrs: str = ""
 
 
 @lru_cache
