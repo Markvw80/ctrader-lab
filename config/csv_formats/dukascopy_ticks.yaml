@@ -1,0 +1,10 @@
+# Dukascopy tick export.
+kind: ticks
+separator: ","
+has_header: true
+columns:
+  datetime: "Gmt time"
+  ask: Ask
+  bid: Bid
+datetime_format: "%d.%m.%Y %H:%M:%S%.3f"
+timezone: UTC

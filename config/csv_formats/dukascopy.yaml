@@ -1,0 +1,12 @@
+# Dukascopy bar export ("Gmt time" column, UTC).
+kind: bars
+separator: ","
+has_header: true
+columns:
+  datetime: "Gmt time"
+  open: Open
+  high: High
+  low: Low
+  close: Close
+datetime_format: "%d.%m.%Y %H:%M:%S%.3f"
+timezone: UTC

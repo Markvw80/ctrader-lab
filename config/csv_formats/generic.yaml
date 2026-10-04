@@ -1,0 +1,13 @@
+# Generic bar CSV: header "ts,open,high,low,close,volume", ISO timestamps in UTC.
+kind: bars
+separator: ","
+has_header: true
+columns:
+  datetime: ts
+  open: open
+  high: high
+  low: low
+  close: close
+  tick_volume: volume     # optional; missing -> 0
+datetime_format: "%Y-%m-%d %H:%M:%S"
+timezone: UTC

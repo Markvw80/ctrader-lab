@@ -11,6 +11,13 @@ min_lot: 0.01
 lot_step: 0.01
 quote_currency: USD       # account is USD: no FX conversion needed
 
+# Used by data validation (gap detection, timezone sanity check).
+market_hours:
+  tz: America/New_York
+  daily_break: ["17:00", "18:00"]   # also the weekly close (Fri) and open (Sun)
+  edge_tolerance_minutes: 5         # missing bars this close to the break are not gaps
+  spike_pct: 2.0                    # single-bar move that triggers a warning (<= H1)
+
 costs:
   commission:
     # cTrader charges on traded notional: 3 USD per 100k USD per side.

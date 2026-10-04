@@ -1,0 +1,14 @@
+# MetaTrader 5 "Export bars" (tab separated). Server clock of IC Markets = NY+7.
+kind: bars
+separator: "\t"
+has_header: true
+columns:
+  date: "<DATE>"
+  time: "<TIME>"
+  open: "<OPEN>"
+  high: "<HIGH>"
+  low: "<LOW>"
+  close: "<CLOSE>"
+  tick_volume: "<TICKVOL>"
+datetime_format: "%Y.%m.%d %H:%M:%S"
+timezone: NY+7

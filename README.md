@@ -9,7 +9,7 @@ weigert tenzij `CTRADER_ENV=demo`.
 | Fase | Onderdeel | Status |
 |---|---|---|
 | 1 | Structuur, Docker, compose | klaar |
-| 2 | Datalaag + CSV-import | – |
+| 2 | Datalaag + CSV-import | klaar |
 | 3 | Backtest-engine + tests | – |
 | 4 | Optimalisatie + walk-forward | – |
 | 5 | Rapportage + webpagina | – |
@@ -52,6 +52,45 @@ docker compose exec lab ctlab info
 ./scripts/deploy.sh       # nieuwe versie
 docker compose down       # stoppen (data blijft staan)
 ```
+
+## Data
+
+Conventies:
+- Alle timestamps in **UTC**. `ts` van een candle = **openingstijd**.
+- Basis is M1. Hogere timeframes worden on-the-fly uit M1 afgeleid (`ctlab.data.loader.load_bars`).
+  Candles >= H1 volgen de brokerklok (New York + 7 u): D1 begint op de rollover van 17:00 New York.
+- Opslag: `data/parquet/<SYMBOL>/<TF>/<jaar>.parquet` (ticks: `TICK/<jaar-maand>.parquet`).
+  Bij overlap wint de nieuwste import; duplicaten bestaan niet in de opslag.
+
+```sh
+docker compose exec lab ctlab data import-csv /data/raw/xau_m1.csv --format mt5
+docker compose exec lab ctlab data validate --symbol XAUUSD --timeframe M1
+docker compose exec lab ctlab data list
+```
+
+Zet CSV-bestanden in `./data/raw` op de NAS (in de container: `/data/raw`).
+
+### CSV-formaten
+
+Een formaat is een kleine YAML in `config/csv_formats/` (meegeleverd: `generic`, `mt5`,
+`dukascopy`, `dukascopy_ticks`). Hierin staan de kolomnamen, het tijdformaat en de bron-tijdzone
+(IANA-naam, of `NY+7` voor een MetaTrader-serverklok). Een eigen bestand kan ook:
+`--format /data/raw/mijnformaat.yaml`.
+
+### Validatie
+
+Elke import wordt gevalideerd; bij **fouten** wordt niets geschreven (overrulen met `--force`).
+
+| Controle | Niveau |
+|---|---|
+| Dubbele timestamps met verschillende waarden | fout |
+| Niet-uitgelijnde timestamps, OHLC inconsistent, prijs <= 0, ask < bid | fout |
+| Tijdzone verdacht: dagelijkse pauze niet om 17:00 New York (per maand, vangt DST-fouten) | fout |
+| Data in gesloten markt, sprong > 2% in één candle | waarschuwing |
+| Gaten >= 60 min terwijl de markt open hoort te zijn (feestdagen, ontbrekende data) | waarschuwing |
+| Korte gaten (normaal op M1 in stille momenten) | info |
+
+Het rapport staat ook in `data/parquet/<SYMBOL>/<TF>/_validation.json`.
 
 ## Lokaal ontwikkelen
 
