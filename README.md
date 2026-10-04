@@ -17,11 +17,26 @@ weigert tenzij `CTRADER_ENV=demo`.
 
 ## Op de NAS starten (UGREEN DXP2800)
 
-Eenmalig, via SSH op de NAS:
+Eenmalig, via SSH op de NAS. De repo is privé, dus de NAS krijgt een eigen read-only deploy key:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/ctrader_lab_deploy -N ""
+cat ~/.ssh/ctrader_lab_deploy.pub
+# -> github.com/Markvw80/ctrader-lab/settings/keys -> Add deploy key (zonder write access)
+cat >> ~/.ssh/config <<'CFG'
+Host github-ctrader-lab
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/ctrader_lab_deploy
+    IdentitiesOnly yes
+CFG
+```
+
+Daarna:
 
 ```sh
 cd /volume1/docker
-git clone <jouw-private-repo-url> ctrader-lab
+git clone github-ctrader-lab:Markvw80/ctrader-lab.git ctrader-lab
 cd ctrader-lab
 cp .env.example .env
 id                        # zet PUID/PGID in .env op jouw uid/gid
