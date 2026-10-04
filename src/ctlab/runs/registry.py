@@ -62,7 +62,7 @@ def data_fingerprint(bars: pl.DataFrame) -> dict:
 def save_run(run_id: str, kind: str, meta: dict, metrics: dict | None = None,
              frames: dict[str, pl.DataFrame] | None = None) -> Path:
     d = runs_dir() / run_id
-    d.mkdir(parents=True, exist_ok=False)
+    d.mkdir(parents=True, exist_ok=True)
     meta = {
         "run_id": run_id, "kind": kind,
         "created": datetime.now(UTC).isoformat(timespec="seconds"),

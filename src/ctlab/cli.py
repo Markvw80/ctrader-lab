@@ -391,16 +391,204 @@ def _print_metrics(m: dict, b: dict) -> None:
         typer.echo(str(df))
 
 
-@app.command()
-def optimize(strategy: str, trials: int = 100) -> None:
-    """Optuna optimization on the in-sample part (holdout excluded)."""
-    _todo(4)
+def _opt_settings(objective: str | None) -> dict:
+    s = dict(settings()["optimization"])
+    if objective:
+        s["objective"] = objective
+    return s
+
+
+def _research_split(symbol: str, s: dict, end: str | None):
+    """Fixed holdout boundary (from all stored data) and the research end for this run."""
+    from ctlab.optimize.splits import holdout_start
+
+    lf = store.scan(symbol, "M1").select(pl.col("ts").min().alias("a"), pl.col("ts").max().alias("b"))
+    first, last = lf.collect().row(0)
+    h = holdout_start(symbol, first, last, s["holdout_pct"])
+    research_end = min(h, _parse_utc(end)) if end else h
+    return h, research_end
 
 
 @app.command()
-def walkforward(strategy: str) -> None:
-    """Rolling walk-forward: optimize IS, validate OOS, report robustness."""
-    _todo(4)
+def optimize(
+    strategy: str,
+    symbol: str = "XAUUSD",
+    trials: int = typer.Option(100, help="Optuna trials"),
+    start: str | None = typer.Option(None, help="UTC; default: first stored bar"),
+    end: str | None = typer.Option(None, help="UTC; capped at the holdout start"),
+    objective: str | None = typer.Option(None, help="sharpe | return_dd | net_profit | profit_factor"),
+) -> None:
+    """Optimize on the whole research period (holdout excluded) + sensitivity analysis.
+
+    This alone says nothing about robustness: use `walkforward` for that.
+    """
+    from ctlab.engine.runner import load_inputs
+    from ctlab.optimize.optuna_runner import Evaluator, best_params, best_valid, trials_frame
+    from ctlab.optimize.optuna_runner import optimize as run_opt
+    from ctlab.optimize.robustness import sensitivity
+    from ctlab.report.metrics import compute_metrics
+    from ctlab.runs.registry import data_fingerprint, new_run_id, runs_dir, save_run
+    from ctlab.strategy.base import get_strategy
+
+    cls = get_strategy(strategy)
+    s = _opt_settings(objective)
+    hstart, rend = _research_split(symbol, s, end)
+    inp = load_inputs(symbol, _parse_utc(start) if start else None, rend)
+    typer.echo(f"research {inp.bars['ts'].min()} -> {rend} (holdout from {hstart} is never used)")
+    rid = new_run_id(f"opt-{strategy}")
+    rdir = runs_dir() / rid
+    rdir.mkdir(parents=True)
+    ev = Evaluator(cls, inp, None, None, s["warmup_days"], s["objective"], s["min_trades_per_window"])
+    study = run_opt(ev, trials, s["seed"], rdir / "optuna.db", "optimize",
+                    progress=lambda d, n: typer.echo(f"  trial {d}/{n}") if d % 20 == 0 else None)
+    best = best_valid(study)
+    if best is None:
+        typer.echo(f"No valid parameter set (every trial < {s['min_trades_per_window']} trades).")
+        raise typer.Exit(1)
+    params = best_params(best)
+    typer.echo(f"best {s['objective']} = {best.value:.3f}  params {params}")
+    sens = sensitivity(cls, params, ev.score, s["sensitivity_min_stability"])
+    res = ev.run(params)
+    m = compute_metrics(res, inp.sessions)
+    _print_metrics(m, {})
+    _print_sensitivity(sens)
+    typer.echo("NOTE: in-sample result only. Run `ctlab walkforward` to judge robustness.")
+    save_run(rid, "optimize", {
+        "strategy": strategy, "symbol": symbol, "objective": s["objective"], "trials": trials,
+        "seed": s["seed"], "holdout_start": str(hstart),
+        "research_range": [str(inp.bars["ts"].min()), str(rend)],
+        "data": data_fingerprint(inp.bars), "engine": inp.cfg, "cost_model": inp.cost,
+        "optimization_settings": s, "best_params": params,
+    }, {**m, "best_objective": best.value, "best_params": params,
+        "sensitivity": {k: v for k, v in sens.items() if k != "rows"}},
+        {"trials": trials_frame(study), "sensitivity": pl.DataFrame(sens["rows"]),
+         "trades": res.trades, "equity": res.equity})
+    typer.echo(f"run id: {rid}")
+
+
+@app.command()
+def walkforward(
+    strategy: str,
+    symbol: str = "XAUUSD",
+    trials: int = typer.Option(50, help="Optuna trials per window"),
+    start: str | None = None,
+    end: str | None = typer.Option(None, help="UTC; capped at the holdout start"),
+    objective: str | None = None,
+    is_months: int | None = None,
+    oos_months: int | None = None,
+    anchored: bool | None = None,
+) -> None:
+    """Rolling walk-forward on the research period; ends with ROBUST / NOT ROBUST."""
+    from ctlab.engine.runner import load_inputs
+    from ctlab.optimize.walkforward import run_walkforward
+    from ctlab.runs.registry import data_fingerprint, new_run_id, runs_dir, save_run
+    from ctlab.strategy.base import get_strategy
+
+    cls = get_strategy(strategy)
+    s = _opt_settings(objective)
+    for k, v in (("wf_in_sample_months", is_months), ("wf_out_of_sample_months", oos_months),
+                 ("wf_anchored", anchored)):
+        if v is not None:
+            s[k] = v
+    hstart, rend = _research_split(symbol, s, end)
+    inp = load_inputs(symbol, _parse_utc(start) if start else None, rend)
+    typer.echo(f"research {inp.bars['ts'].min()} -> {rend} (holdout from {hstart} is never used)")
+    rid = new_run_id(f"wf-{strategy}")
+    rdir = runs_dir() / rid
+    rdir.mkdir(parents=True)
+    wf = run_walkforward(cls, inp, rend, s, trials, rdir / "optuna.db", log=typer.echo)
+
+    typer.echo("\nwindow  IS trades     IS net   OOS trades    OOS net  OOS sharpe")
+    for w in wf.windows:
+        typer.echo(f"{w['window']:>6}  {w['is_trades'] or 0:>9}  {w['is_net'] or 0:>9.2f}"
+                   f"  {w['oos_trades']:>10}  {w['oos_net']:>9.2f}  {w['oos_sharpe']}")
+    typer.echo(f"\nin-sample   {wf.is_annual_pct:>8.2f} % per year (best trials)")
+    typer.echo(f"out-of-sample {wf.oos_annual_pct:>6.2f} % per year  (combined, "
+               f"{wf.oos_metrics['trades']} trades, max DD {wf.oos_metrics['max_drawdown_pct']}%, "
+               f"sharpe {wf.oos_metrics['sharpe']})")
+    if wf.sensitivity:
+        _print_sensitivity(wf.sensitivity)
+    v = wf.verdict
+    typer.echo(f"\nVERDICT: {v['label']}")
+    for r in v["reasons"]:
+        typer.echo(f"  - {r}")
+    windows_df = pl.DataFrame([{**w, "params": json.dumps(w["params"])} for w in wf.windows])
+    save_run(rid, "walkforward", {
+        "strategy": strategy, "symbol": symbol, "objective": s["objective"],
+        "trials_per_window": trials, "seed": s["seed"], "holdout_start": str(hstart),
+        "research_range": list(wf.research_range), "data": data_fingerprint(inp.bars),
+        "engine": inp.cfg, "cost_model": inp.cost, "optimization_settings": s,
+        "final_params": wf.windows[-1]["params"] if wf.windows else None,
+    }, {"verdict": v, "is_annual_pct": wf.is_annual_pct, "oos_annual_pct": wf.oos_annual_pct,
+        "oos": wf.oos_metrics,
+        "sensitivity": None if not wf.sensitivity else
+        {k: x for k, x in wf.sensitivity.items() if k != "rows"}},
+        {"windows": windows_df, "trades": wf.oos_trades, "equity": wf.oos_equity,
+         "trials": wf.trials,
+         **({"sensitivity": pl.DataFrame(wf.sensitivity["rows"])} if wf.sensitivity else {})})
+    typer.echo(f"run id: {rid}")
+
+
+@app.command()
+def holdout(run_id: str) -> None:
+    """Evaluate the parameters of an optimize/walkforward run ONCE on the untouched holdout."""
+    from ctlab.engine.runner import load_inputs
+    from ctlab.optimize.optuna_runner import Evaluator
+    from ctlab.report.metrics import breakdowns, compute_metrics
+    from ctlab.runs.registry import data_fingerprint, list_runs, load_run, new_run_id, save_run
+    from ctlab.strategy.base import get_strategy
+
+    meta, _, _ = load_run(run_id)
+    params = meta.get("best_params") or meta.get("final_params")
+    if meta["kind"] not in ("optimize", "walkforward") or not params:
+        typer.echo("Run has no parameters to test (need an optimize or walkforward run).")
+        raise typer.Exit(1)
+    strategy, symbol = meta["strategy"], meta["symbol"]
+    previous = [r for r in list_runs() if r["kind"] == "holdout" and r.get("strategy") == strategy]
+    if previous:
+        typer.echo(f"WARNING: holdout already used {len(previous)}x for {strategy}. Every extra look "
+                   "turns the holdout into in-sample data; treat this result as optimistic.")
+    s = _opt_settings(None)
+    hstart = _parse_utc(meta["holdout_start"])
+    inp = load_inputs(symbol, hstart - timedelta(days=s["warmup_days"]), None)
+    ev = Evaluator(get_strategy(strategy), inp, hstart, None, s["warmup_days"], s["objective"], 0)
+    res = ev.run(params)
+    m = compute_metrics(res, inp.sessions)
+    b = breakdowns(res, inp.sessions)
+    typer.echo(f"holdout {hstart} -> {inp.bars['ts'].max()}  params {params}")
+    _print_metrics(m, b)
+    rid = new_run_id(f"holdout-{strategy}")
+    save_run(rid, "holdout", {
+        "strategy": strategy, "symbol": symbol, "source_run": run_id, "params": params,
+        "holdout_start": str(hstart), "previous_holdout_runs": len(previous),
+        "data": data_fingerprint(inp.bars.filter(pl.col("ts") >= hstart)),
+        "engine": inp.cfg, "cost_model": inp.cost,
+    }, m, {"trades": res.trades, "equity": res.equity, **{f"breakdown_{k}": v for k, v in b.items()}})
+    typer.echo(f"run id: {rid}")
+
+
+@app.command()
+def runs(limit: int = 20) -> None:
+    """List stored runs (newest first)."""
+    from ctlab.runs.registry import list_runs
+
+    for r in list_runs()[:limit]:
+        m = r.get("metrics", {})
+        if r["kind"] == "walkforward":
+            info = f"{m.get('verdict', {}).get('label')}  OOS {m.get('oos_annual_pct')}%/yr"
+        else:
+            info = f"net {m.get('net_profit')}  PF {m.get('profit_factor')}  sharpe {m.get('sharpe')}"
+        typer.echo(f"{r['run_id']:<48} {r['kind']:<12} {info}")
+
+
+def _print_sensitivity(sens: dict) -> None:
+    typer.echo(f"sensitivity: stability {sens['stability'] and round(sens['stability'], 2)}  "
+               f"profitable neighbours {sens['profitable_neighbours_pct']}%  "
+               f"{'SENSITIVE' if sens['sensitive'] else 'stable'}")
+    for r in sens["reasons"]:
+        typer.echo(f"  - {r}")
+    if sens["worst"]:
+        typer.echo(f"  weakest neighbours: {', '.join(sens['worst'])}")
 
 
 @app.command()

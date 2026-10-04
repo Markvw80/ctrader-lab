@@ -18,6 +18,7 @@ One position at a time. Opening a position cancels all other pending orders (OCO
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import numpy as np
 import polars as pl
@@ -38,6 +39,8 @@ class EngineConfig:
     risk_per_trade_pct: float = 0.5
     daily_loss_limit_pct: float | None = 2.0
     max_leverage: float = 20.0
+    # Warmup: on_bar runs on earlier bars, but decisions on bars closing before this are dropped.
+    trade_from: datetime | None = None
 
 
 @dataclass
@@ -91,17 +94,29 @@ def prepare_columns(strategy: Strategy, strat_bars: pl.DataFrame) -> dict[str, n
     return cols
 
 
-def run_backtest(strategy: Strategy, exec_bars: pl.DataFrame, cost: CostModel, sessions: dict,
-                 cfg: EngineConfig | None = None, exec_timeframe: str = "M1") -> BacktestResult:
-    cfg = cfg or EngineConfig()
-    exec_bars = exec_bars.sort("ts")
-    stf = strategy.timeframe.upper()
-    etf = exec_timeframe.upper()
+def prepare_market(exec_bars: pl.DataFrame, strategy_timeframe: str, sessions: dict,
+                   exec_timeframe: str = "M1") -> tuple[pl.DataFrame, pl.DataFrame]:
+    """(execution bars, strategy bars), both with calendar columns. Cache this across runs."""
+    stf, etf = strategy_timeframe.upper(), exec_timeframe.upper()
     if timeframe_minutes(stf) < timeframe_minutes(etf):
         raise ValueError(f"Strategy timeframe {stf} is smaller than execution timeframe {etf}")
+    exec_bars = exec_bars.sort("ts")
     strat_bars = exec_bars if stf == etf else resample(exec_bars, stf)
-    strat_bars = add_calendar(strat_bars, sessions)
-    exec_bars = add_calendar(exec_bars, sessions)
+    return add_calendar(exec_bars, sessions), add_calendar(strat_bars, sessions)
+
+
+def run_backtest(strategy: Strategy, exec_bars: pl.DataFrame, cost: CostModel, sessions: dict,
+                 cfg: EngineConfig | None = None, exec_timeframe: str = "M1",
+                 prepared: tuple[pl.DataFrame, pl.DataFrame] | None = None) -> BacktestResult:
+    cfg = cfg or EngineConfig()
+    stf = strategy.timeframe.upper()
+    etf = exec_timeframe.upper()
+    if prepared is None:
+        prepared = prepare_market(exec_bars, stf, sessions, etf)
+    exec_bars, strat_bars = prepared
+    trade_from_ns = None
+    if cfg.trade_from is not None:
+        trade_from_ns = int(pl.Series([cfg.trade_from]).dt.cast_time_unit("ns").dt.epoch("ns")[0])
 
     cols = prepare_columns(strategy, strat_bars)
     s_ts = cols["ts"]
@@ -215,6 +230,9 @@ def run_backtest(strategy: Strategy, exec_bars: pl.DataFrame, cost: CostModel, s
                 ctx = Context(j, cols, info, bool(pendings), balance + last_unreal, halted)
                 strategy.on_bar(ctx)
                 stats["decisions"] += 1
+                if trade_from_ns is not None and s_ts[j] + tf_ns < trade_from_ns:
+                    j += 1      # warmup: strategy state only, no actions
+                    continue
                 if ctx.cancel_requested:
                     q_cancel = True
                 if ctx.close_requested and q_close is None:
@@ -334,13 +352,15 @@ def run_backtest(strategy: Strategy, exec_bars: pl.DataFrame, cost: CostModel, s
     trades_df = _trades_frame(trades)
     equity_df = (
         pl.DataFrame({"ts_ns": eq_ts, "equity": eq_val}, schema={"ts_ns": pl.Int64, "equity": pl.Float64})
+        .filter(pl.col("ts_ns") >= (trade_from_ns or 0))
         .with_columns(ts=pl.from_epoch("ts_ns", time_unit="ns").dt.replace_time_zone("UTC"))
         .select("ts", "equity")
     )
     stats["final_balance"] = balance
+    start = str(exec_bars["ts"].min()) if cfg.trade_from is None else str(cfg.trade_from)
     return BacktestResult(
         trades=trades_df, equity=equity_df, stats=stats,
-        start=str(exec_bars["ts"].min()), end=str(exec_bars["ts"].max()),
+        start=start, end=str(exec_bars["ts"].max()),
         exec_timeframe=etf, strategy_timeframe=stf, initial_balance=cfg.initial_balance,
         params=dict(strategy.params),
     )

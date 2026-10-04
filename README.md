@@ -11,7 +11,7 @@ weigert tenzij `CTRADER_ENV=demo`.
 | 1 | Structuur, Docker, compose | klaar |
 | 2 | Datalaag + CSV-import | klaar |
 | 3 | Backtest-engine + tests | klaar |
-| 4 | Optimalisatie + walk-forward | – |
+| 4 | Optimalisatie + walk-forward | klaar |
 | 5 | Rapportage + webpagina | – |
 | 6 | cTrader Open API | code klaar, wacht op API-toegang |
 
@@ -151,6 +151,39 @@ uitsplitsingen per maand, weekdag en sessie.
   Dagelijkse verlieslimiet per handelsdag (start 17:00 New York): bij overschrijding wordt de
   positie bij de volgende open gesloten en worden nieuwe orders die dag geweigerd.
 - Eén positie tegelijk; zodra een positie opent vervallen andere pending orders (OCO).
+
+## Optimalisatie en walk-forward
+
+```sh
+docker compose exec lab ctlab optimize session_breakout --trials 100      # hele onderzoeksperiode
+docker compose exec lab ctlab walkforward session_breakout --trials 50    # oordeel: ROBUST / NOT ROBUST
+docker compose exec lab ctlab holdout <run-id>                            # één keer, aan het eind
+docker compose exec lab ctlab runs
+```
+
+Werkwijze: ontwikkel en optimaliseer alleen op de onderzoeksperiode, beoordeel met
+`walkforward`, en test de gekozen parameters pas helemaal aan het eind **één keer** op de holdout.
+
+- **Holdout.** Bij het eerste gebruik wordt de laatste 20% van de data afgesplitst en de
+  startdatum vastgelegd in `data/research/holdout_XAUUSD.json`. Die datum schuift nooit op:
+  nieuw opgehaalde data valt ook in de holdout. `optimize` en `walkforward` lezen nooit data
+  vanaf die datum. `holdout` waarschuwt als de holdout voor dezelfde strategie al eerder is
+  gebruikt (elke extra blik maakt hem minder onafhankelijk).
+- **Walk-forward.** In-sample 12 maanden optimaliseren, out-of-sample 3 maanden testen met de
+  beste parameters, 3 maanden doorschuiven (instelbaar; ook `--anchored`). Elk OOS-venster
+  start met de eindbalans van het vorige: de gecombineerde OOS-equity is één eerlijke reeks.
+  Indicatoren krijgen `warmup_days` aan eerdere data, zonder trades in die periode.
+- **Minimum trades.** In-sample trials met minder dan `min_trades_per_window` trades worden
+  afgewezen; OOS-vensters met minder dan `min_trades_oos` trades tellen niet als bewijs.
+- **Gevoeligheid.** Elke parameter wordt een stap en ~10% van zijn bereik verschoven. Zakt de
+  doelwaarde dan onder 50% van het optimum, of is minder dan 75% van de buren winstgevend,
+  dan heet het optimum "sensitive" (een piek in plaats van een plateau).
+- **Oordeel NOT ROBUST** bij één of meer van: OOS verliesgevend; OOS-rendement per jaar
+  < 50% van in-sample; < 50% van de (beoordeelbare) OOS-vensters winstgevend; te weinig
+  OOS-trades; vensters waarin zelfs de beste in-sample-parameters verliezen; gevoelig optimum.
+  Alle drempels staan in `config/settings.yaml` onder `optimization`.
+- Elke Optuna-studie staat als `optuna.db` (SQLite) in de run-map; de seed staat in de
+  settings, dus een run is reproduceerbaar.
 
 ## Nieuwe strategie toevoegen
 
