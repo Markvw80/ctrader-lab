@@ -12,7 +12,7 @@ weigert tenzij `CTRADER_ENV=demo`.
 | 2 | Datalaag + CSV-import | klaar |
 | 3 | Backtest-engine + tests | klaar |
 | 4 | Optimalisatie + walk-forward | klaar |
-| 5 | Rapportage + webpagina | – |
+| 5 | Rapportage + webpagina | klaar |
 | 6 | cTrader Open API | code klaar, wacht op API-toegang |
 
 ## Op de NAS starten (UGREEN DXP2800)
@@ -184,6 +184,28 @@ Werkwijze: ontwikkel en optimaliseer alleen op de onderzoeksperiode, beoordeel m
   Alle drempels staan in `config/settings.yaml` onder `optimization`.
 - Elke Optuna-studie staat als `optuna.db` (SQLite) in de run-map; de seed staat in de
   settings, dus een run is reproduceerbaar.
+
+## Rapporten en webpagina
+
+Na elke `backtest`, `optimize`, `walkforward` en `holdout` staat er een HTML-rapport in
+`results/runs/<id>/report.html`: kerncijfers, equity en drawdown, resultaat per maand, weekdag
+en sessie, kosten, exit-redenen, trades, en bij optimalisatie/walk-forward ook het oordeel,
+de vensters, de gevoeligheidstabel en per parameter een scatter (plateau of piek?).
+Rapporten zijn één bestand zonder externe scripts en werken dus ook offline.
+
+```sh
+docker compose exec lab ctlab report <run-id>     # opnieuw maken
+docker compose exec lab ctlab report              # alle runs opnieuw (bijv. na een update)
+```
+
+Webpagina: `http://<nas-ip>:8088`
+
+- Overzicht van alle runs met filter op soort en strategie
+- Rapport per run, trades als CSV-download
+- Vergelijken: vink 2–6 runs aan → rendementscurves over elkaar, metrics naast elkaar
+  (beste waarde vet), parameters naast elkaar
+- Alleen-lezen: vanaf de pagina kun je niets starten of wijzigen
+- Verzoeken van buiten privé-netwerkadressen krijgen 403. Open poort 8088 niet in je router.
 
 ## Nieuwe strategie toevoegen
 

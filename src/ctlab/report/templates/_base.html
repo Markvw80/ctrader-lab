@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ctrader-lab{% endblock %}</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #1c2330; --muted: #667085; --line: #e3e6eb;
+  --grid: #eceef2; --pos: #14915f; --neg: #d1453b; --accent: #2f6fdf;
+  --c1: #2f6fdf; --c2: #e07b24; --c3: #14915f; --c4: #9b51e0; --c5: #d1453b; --c6: #0e9aa7;
+  --ok-bg: #e7f6ee; --bad-bg: #fdeceb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --card: #1a1f27; --text: #e6e9ef; --muted: #98a2b3; --line: #2a313c;
+    --grid: #242a33; --pos: #3cc48a; --neg: #f0675d; --accent: #6b9cff;
+    --c1: #6b9cff; --c2: #f2a05a; --c3: #3cc48a; --c4: #c08cff; --c5: #f0675d; --c6: #4cc9d4;
+    --ok-bg: #143323; --bad-bg: #3a1a18;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header.top { background: var(--card); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+header.top a { color: var(--text); text-decoration: none; font-weight: 600; }
+main { max-width: 1180px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 20px; margin: 4px 0 2px; } h2 { font-size: 16px; margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 16px; margin: 0 0 14px; overflow-x: auto; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.tile .k { color: var(--muted); font-size: 12px; } .tile .v { font-size: 18px; font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); fill: var(--pos); } .neg { color: var(--neg); fill: var(--neg); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+td.n, th.n { text-align: right; }
+tr:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+svg.chart { width: 100%; height: auto; display: block; }
+svg .grid { stroke: var(--grid); stroke-width: 1; } svg .axis { stroke: var(--muted); stroke-width: 1; }
+svg .tick { fill: var(--muted); font-size: 11px; }
+svg .dot { fill: var(--accent); fill-opacity: .55; } svg .hl { stroke: var(--neg); stroke-dasharray: 4 3; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+.verdict { border-radius: 8px; padding: 12px 16px; margin: 0 0 14px; border: 1px solid var(--line); }
+.verdict.ok { background: var(--ok-bg); } .verdict.bad { background: var(--bad-bg); }
+.verdict strong { font-size: 18px; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px;
+  border: 1px solid var(--line); color: var(--muted); }
+.badge.ok { color: var(--pos); border-color: var(--pos); } .badge.bad { color: var(--neg); border-color: var(--neg); }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-x: auto;
+  font-size: 12px; }
+a { color: var(--accent); }
+button, select, input { font: inherit; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<header class="top"><a href="/">ctrader-lab</a> <span class="muted">· research only</span></header>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

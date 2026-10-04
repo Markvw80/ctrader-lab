@@ -1,0 +1,28 @@
+{% extends "_base.html" %}
+{% block title %}Compare · ctrader-lab{% endblock %}
+{% block content %}
+<p><a href="/">← runs</a></p>
+<h1>Compare {{ runs|length }} runs</h1>
+<div class="card"><h2>Return % over time</h2>{{ chart|safe }}</div>
+<div class="card"><h2>Metrics</h2>
+<table>
+  <tr><th></th>{% for r in runs %}<th class="n"><a href="/runs/{{ r.id }}">{{ r.meta.strategy }}</a><br>
+    <span class="muted">{{ r.meta.kind }} · {{ r.id[:15] }}</span></th>{% endfor %}</tr>
+  <tr><td>period</td>{% for r in runs %}<td class="n muted">{% if r.meta.data %}{{ r.meta.data.first|date }} → {{ r.meta.data.last|date }}{% endif %}</td>{% endfor %}</tr>
+  {% for key, label, mode in rows %}
+  <tr><td>{{ label }}</td>{% for r in runs %}{% set x = r.m.get(key) %}
+    <td class="n" {% if key in best and x == best[key] %}style="font-weight:700"{% endif %}>{{ x|num }}</td>{% endfor %}</tr>
+  {% endfor %}
+  <tr><td>Verdict</td>{% for r in runs %}<td class="n">{% if r.verdict %}<span class="badge {{ 'ok' if r.verdict == 'ROBUST' else 'bad' }}">{{ r.verdict }}</span>{% else %}–{% endif %}</td>{% endfor %}</tr>
+  <tr><td>Code</td>{% for r in runs %}<td class="n muted">{{ r.meta.code.git_commit }}</td>{% endfor %}</tr>
+</table>
+<p class="muted">Bold = best value in the row. Walk-forward runs show their combined out-of-sample result.</p>
+</div>
+{% if param_names %}
+<div class="card"><h2>Parameters</h2><table>
+  <tr><th></th>{% for r in runs %}<th class="n">{{ r.id[:15] }}</th>{% endfor %}</tr>
+  {% for p in param_names %}
+  <tr><td>{{ p }}</td>{% for r in runs %}<td class="n">{{ r.params.get(p, '–')|param }}</td>{% endfor %}</tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

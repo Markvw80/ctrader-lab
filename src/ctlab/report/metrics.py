@@ -93,7 +93,10 @@ def compute_metrics(result, sessions: dict) -> dict:
 
 def breakdowns(result, sessions: dict) -> dict[str, pl.DataFrame]:
     """Net result per month, weekday and session (by entry time)."""
-    t = result.trades
+    return breakdowns_from_trades(result.trades, sessions)
+
+
+def breakdowns_from_trades(t: pl.DataFrame, sessions: dict) -> dict[str, pl.DataFrame]:
     if t.height == 0:
         return {}
     t = t.with_columns(

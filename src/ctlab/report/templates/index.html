@@ -1,0 +1,41 @@
+{% extends "_base.html" %}
+{% block title %}Runs · ctrader-lab{% endblock %}
+{% block content %}
+<h1>Runs</h1>
+<form method="get" action="/" class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <label>kind <select name="kind" onchange="this.form.submit()"><option value="">all</option>
+    {% for k in kinds %}<option {{ 'selected' if k == kind }}>{{ k }}</option>{% endfor %}</select></label>
+  <label>strategy <select name="strategy" onchange="this.form.submit()"><option value="">all</option>
+    {% for s in strategies %}<option {{ 'selected' if s == strategy }}>{{ s }}</option>{% endfor %}</select></label>
+  <span class="muted">{{ rows|length }} runs</span>
+</form>
+{% if not rows %}
+  <div class="card muted">No runs yet. Start with <code>docker compose exec lab ctlab backtest session_breakout</code>.</div>
+{% else %}
+<form method="get" action="/compare" class="card" id="cmp">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span class="muted">Select 2–{{ max_compare }} runs to compare.</span>
+    <button class="primary" type="submit">Compare selected</button>
+  </div>
+  <table>
+    <tr><th></th><th>created</th><th>kind</th><th>strategy</th><th>period</th><th class="n">trades</th>
+      <th class="n">net</th><th class="n">return %</th><th class="n">max DD %</th><th class="n">PF</th>
+      <th class="n">sharpe</th><th>status</th><th></th></tr>
+    {% for row in rows %}{% set r = row.run %}{% set m = row.m %}
+    <tr>
+      <td><input type="checkbox" name="ids" value="{{ r.run_id }}" aria-label="select {{ r.run_id }}"></td>
+      <td>{{ r.created|ts }}</td><td>{{ r.kind }}</td><td>{{ r.strategy }}</td>
+      <td class="muted">{% if r.data %}{{ r.data.first|date }} → {{ r.data.last|date }}{% endif %}</td>
+      <td class="n">{{ m.trades|num }}</td>
+      <td class="n {{ 'pos' if (m.net_profit or 0) > 0 else 'neg' if (m.net_profit or 0) < 0 }}">{{ m.net_profit|num }}</td>
+      <td class="n">{{ m.return_pct|num }}</td><td class="n">{{ m.max_drawdown_pct|num }}</td>
+      <td class="n">{{ m.profit_factor|num }}</td><td class="n">{{ m.sharpe|num }}</td>
+      <td>{% if r.kind == 'walkforward' %}{% set v = r.metrics.verdict %}<span class="badge {{ 'ok' if v.robust else 'bad' }}">{{ v.label }}</span>
+          {% elif r.kind == 'optimize' %}<span class="badge">in-sample</span>
+          {% elif r.kind == 'holdout' %}<span class="badge {{ 'bad' if r.previous_holdout_runs else 'ok' }}">holdout{{ ' (reused)' if r.previous_holdout_runs }}</span>{% endif %}</td>
+      <td><a href="/runs/{{ r.run_id }}">report</a> · <a href="/runs/{{ r.run_id }}/trades.csv">csv</a></td>
+    </tr>{% endfor %}
+  </table>
+</form>
+{% endif %}
+{% endblock %}

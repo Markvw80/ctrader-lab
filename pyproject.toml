@@ -23,7 +23,11 @@ dependencies = [
 ctlab = "ctlab.cli:app"
 
 [dependency-groups]
-dev = ["pytest>=8.2", "ruff>=0.5"]
+dev = [
+    "httpx>=0.27,<0.29",
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,11 +38,14 @@ packages = ["src/ctlab"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-filterwarnings = ["ignore::DeprecationWarning:google.protobuf.*"]
+filterwarnings = [
+    "ignore::DeprecationWarning:google.protobuf.*",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["typer.Option", "typer.Argument"]
+extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Query"]

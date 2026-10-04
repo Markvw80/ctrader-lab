@@ -350,9 +350,9 @@ def backtest(
             "strategy": strategy, "params": strat.params, "symbol": symbol,
             "strategy_timeframe": res.strategy_timeframe, "exec_timeframe": res.exec_timeframe,
             "requested_range": [start, end], "data": data_fingerprint(inp.bars),
-            "engine": inp.cfg, "cost_model": inp.cost, "spread_stat": inp.spread_stat,
+            "engine": inp.cfg, "cost_model": inp.cost, "sessions": inp.sessions, "spread_stat": inp.spread_stat,
         }, m, {"trades": res.trades, "equity": res.equity, **{f"breakdown_{k}": v for k, v in b.items()}})
-        typer.echo(f"run id: {rid}")
+        _finish(rid)
 
 
 @app.command()
@@ -457,13 +457,13 @@ def optimize(
         "strategy": strategy, "symbol": symbol, "objective": s["objective"], "trials": trials,
         "seed": s["seed"], "holdout_start": str(hstart),
         "research_range": [str(inp.bars["ts"].min()), str(rend)],
-        "data": data_fingerprint(inp.bars), "engine": inp.cfg, "cost_model": inp.cost,
+        "data": data_fingerprint(inp.bars), "engine": inp.cfg, "cost_model": inp.cost, "sessions": inp.sessions,
         "optimization_settings": s, "best_params": params,
     }, {**m, "best_objective": best.value, "best_params": params,
         "sensitivity": {k: v for k, v in sens.items() if k != "rows"}},
         {"trials": trials_frame(study), "sensitivity": pl.DataFrame(sens["rows"]),
          "trades": res.trades, "equity": res.equity})
-    typer.echo(f"run id: {rid}")
+    _finish(rid)
 
 
 @app.command()
@@ -517,7 +517,7 @@ def walkforward(
         "strategy": strategy, "symbol": symbol, "objective": s["objective"],
         "trials_per_window": trials, "seed": s["seed"], "holdout_start": str(hstart),
         "research_range": list(wf.research_range), "data": data_fingerprint(inp.bars),
-        "engine": inp.cfg, "cost_model": inp.cost, "optimization_settings": s,
+        "engine": inp.cfg, "cost_model": inp.cost, "sessions": inp.sessions, "optimization_settings": s,
         "final_params": wf.windows[-1]["params"] if wf.windows else None,
     }, {"verdict": v, "is_annual_pct": wf.is_annual_pct, "oos_annual_pct": wf.oos_annual_pct,
         "oos": wf.oos_metrics,
@@ -526,7 +526,7 @@ def walkforward(
         {"windows": windows_df, "trades": wf.oos_trades, "equity": wf.oos_equity,
          "trials": wf.trials,
          **({"sensitivity": pl.DataFrame(wf.sensitivity["rows"])} if wf.sensitivity else {})})
-    typer.echo(f"run id: {rid}")
+    _finish(rid)
 
 
 @app.command()
@@ -562,9 +562,9 @@ def holdout(run_id: str) -> None:
         "strategy": strategy, "symbol": symbol, "source_run": run_id, "params": params,
         "holdout_start": str(hstart), "previous_holdout_runs": len(previous),
         "data": data_fingerprint(inp.bars.filter(pl.col("ts") >= hstart)),
-        "engine": inp.cfg, "cost_model": inp.cost,
+        "engine": inp.cfg, "cost_model": inp.cost, "sessions": inp.sessions,
     }, m, {"trades": res.trades, "equity": res.equity, **{f"breakdown_{k}": v for k, v in b.items()}})
-    typer.echo(f"run id: {rid}")
+    _finish(rid)
 
 
 @app.command()
@@ -592,9 +592,21 @@ def _print_sensitivity(sens: dict) -> None:
 
 
 @app.command()
-def report(run_id: str) -> None:
-    """(Re)generate the HTML report for a run."""
-    _todo(5)
+def report(run_id: str | None = typer.Argument(None, help="Run id; omit with --all")) -> None:
+    """(Re)generate the HTML report for a run (or --all runs)."""
+    from ctlab.report.html import build_report
+    from ctlab.runs.registry import list_runs
+
+    ids = [run_id] if run_id else [r["run_id"] for r in list_runs()]
+    for rid in ids:
+        typer.echo(f"report: {build_report(rid)}")
+
+
+def _finish(rid: str) -> None:
+    from ctlab.report.html import build_report
+
+    typer.echo(f"run id: {rid}")
+    typer.echo(f"report: {build_report(rid)}")
 
 
 if __name__ == "__main__":

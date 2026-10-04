@@ -1,0 +1,124 @@
+{% extends "_base.html" %}
+{% block title %}{{ meta.strategy }} · {{ kind }}{% endblock %}
+{% block content %}
+<p class="muted">{{ kind }} · {{ run_id }}</p>
+<h1>{{ meta.strategy }} <span class="muted">{{ meta.symbol }}</span></h1>
+<p class="muted">
+  {% if meta.data %}{{ meta.data.first|ts }} → {{ meta.data.last|ts }} · {% endif %}
+  {% if meta.strategy_timeframe %}{{ meta.strategy_timeframe }} / exec {{ meta.exec_timeframe }} · {% endif %}
+  code {{ meta.code.git_commit }} · created {{ meta.created|ts }}
+</p>
+
+{% if kind == "walkforward" %}
+  {% set v = metrics.verdict %}
+  <div class="verdict {{ 'ok' if v.robust else 'bad' }}">
+    <strong>{{ v.label }}</strong>
+    <span class="muted"> · in-sample {{ metrics.is_annual_pct|num }} %/yr → out-of-sample
+      {{ metrics.oos_annual_pct|num }} %/yr{% if v.oos_is_ratio is not none %} (ratio {{ v.oos_is_ratio|num(2) }}){% endif %}</span>
+    {% if v.reasons %}<ul>{% for r in v.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+{% elif kind == "optimize" %}
+  <div class="verdict bad"><strong>In-sample only</strong>
+    <span class="muted"> · optimized result; robustness is judged by a walk-forward run.</span></div>
+{% elif kind == "holdout" %}
+  <div class="verdict {{ 'bad' if meta.previous_holdout_runs else 'ok' }}"><strong>Holdout test</strong>
+    <span class="muted"> · parameters from run {{ meta.source_run }}
+    {% if meta.previous_holdout_runs %} · holdout already used {{ meta.previous_holdout_runs }}x before: result is optimistic{% endif %}</span></div>
+{% endif %}
+
+{% set h = headline %}
+{% if h %}
+<div class="tiles card" style="background:none;border:none;padding:0">
+  {% for key, label in [("net_profit","Net result"),("return_pct","Return %"),("max_drawdown_pct","Max DD %"),
+                        ("profit_factor","Profit factor"),("sharpe","Sharpe"),("win_rate_pct","Win rate %"),
+                        ("avg_trade","Avg trade"),("trades","Trades")] %}
+  <div class="tile"><div class="k">{{ label }}</div>
+    <div class="v {% if key in ('net_profit','return_pct','avg_trade') and h[key] %}{{ 'pos' if h[key] > 0 else 'neg' }}{% endif %}">{{ h[key]|num }}</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card"><h2>Equity{% if kind == "walkforward" %} (out-of-sample, all windows chained){% endif %}</h2>
+  {{ equity_svg|safe }}{{ drawdown_svg|safe }}</div>
+
+{% if windows %}
+<div class="card"><h2>Walk-forward windows</h2>
+  {{ windows_svg|safe }}
+  <table><tr><th>#</th><th>in-sample</th><th>out-of-sample</th><th class="n">IS trades</th><th class="n">IS net</th>
+    <th class="n">IS sharpe</th><th class="n">OOS trades</th><th class="n">OOS net</th><th class="n">OOS sharpe</th><th>params</th></tr>
+  {% for w in windows %}
+  <tr><td>{{ w.window }}</td><td>{{ w.is_start|date }} → {{ w.is_end|date }}</td><td>{{ w.oos_start|date }} → {{ w.oos_end|date }}</td>
+    <td class="n">{{ w.is_trades|num }}</td><td class="n">{{ w.is_net|num }}</td><td class="n">{{ w.is_sharpe|num }}</td>
+    <td class="n">{{ w.oos_trades|num }}</td><td class="n {{ 'pos' if w.oos_net > 0 else 'neg' if w.oos_net < 0 }}">{{ w.oos_net|num }}</td>
+    <td class="n">{{ w.oos_sharpe|num }}</td>
+    <td class="muted">{% if w.params %}{% for k, x in w.params.items() %}{{ k }}={{ x|param }} {% endfor %}{% else %}rejected{% endif %}</td></tr>
+  {% endfor %}</table></div>
+{% endif %}
+
+{% if h and h.costs %}
+<div class="grid2">
+  <div class="card"><h2>Costs</h2><table>
+    {% for k, x in h.costs.items() %}<tr><td>{{ k }}</td><td class="n">{{ x|num }}</td></tr>{% endfor %}
+  </table></div>
+  <div class="card"><h2>Exit reasons</h2><table>
+    {% for k, x in h.exit_reasons.items() %}<tr><td>{{ k }}</td><td class="n">{{ x|num }}</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endif %}
+
+{% if breakdown.charts %}
+<div class="card"><h2>Per month</h2>{{ breakdown.charts.month|safe }}</div>
+<div class="grid2">
+  <div class="card"><h2>Per weekday</h2>{{ breakdown.charts.weekday|safe }}
+    <table><tr><th>day</th><th class="n">trades</th><th class="n">net</th><th class="n">win %</th></tr>
+    {% for r in breakdown.tables.weekday %}<tr><td>{{ r.weekday }}</td><td class="n">{{ r.trades }}</td>
+      <td class="n">{{ r.net|num }}</td><td class="n">{{ r.win_rate_pct|num(1) }}</td></tr>{% endfor %}</table></div>
+  <div class="card"><h2>Per session (entry time)</h2>{{ breakdown.charts.session|safe }}
+    <table><tr><th>session</th><th class="n">trades</th><th class="n">net</th><th class="n">win %</th></tr>
+    {% for r in breakdown.tables.session %}<tr><td>{{ r.session }}</td><td class="n">{{ r.trades }}</td>
+      <td class="n">{{ r.net|num }}</td><td class="n">{{ r.win_rate_pct|num(1) }}</td></tr>{% endfor %}</table></div>
+</div>
+{% endif %}
+
+{% if sensitivity_rows %}
+{% set s = metrics.sensitivity %}
+<div class="card"><h2>Sensitivity <span class="badge {{ 'bad' if s and s.sensitive else 'ok' }}">{{ 'sensitive' if s and s.sensitive else 'stable' }}</span></h2>
+  {% if s %}<p class="muted">stability {{ s.stability|num }} · profitable neighbours {{ s.profitable_neighbours_pct|num(1) }} %</p>
+  {% if s.reasons %}<ul>{% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}{% endif %}
+  <table><tr><th>param</th><th>value</th><th class="n">objective</th><th class="n">net</th><th class="n">trades</th></tr>
+  {% for r in sensitivity_rows %}<tr><td>{{ r.param }}</td><td>{{ r.value }}</td>
+    <td class="n">{{ 'rejected' if r.rejected else r.objective|num(3) }}</td>
+    <td class="n {{ 'pos' if r.net_profit > 0 else 'neg' }}">{{ r.net_profit|num }}</td><td class="n">{{ r.trades }}</td></tr>{% endfor %}
+  </table></div>
+{% endif %}
+
+{% if scatters %}
+<div class="card"><h2>Objective per parameter{% if kind == "walkforward" %} (last window){% endif %}</h2>
+  <p class="muted">One dot per trial; dashed line = chosen value. A broad plateau is more trustworthy than a single peak.</p>
+  <div class="grid3">{% for sc in scatters %}<div>{{ sc.svg|safe }}</div>{% endfor %}</div></div>
+{% endif %}
+
+{% if trades %}
+<div class="card"><h2>Trades {% if trades_total > trades_shown %}<span class="muted">(first {{ trades_shown }} of {{ trades_total }})</span>{% endif %}</h2>
+  <table><tr>{% for k in trades[0].keys() %}<th {% if k not in ('side','exit_reason','entry_ts','exit_ts') %}class="n"{% endif %}>{{ k }}</th>{% endfor %}</tr>
+  {% for t in trades %}<tr>{% for k, x in t.items() %}
+    {% if k in ('entry_ts','exit_ts') %}<td>{{ x|ts }}</td>
+    {% elif k in ('side','exit_reason') %}<td>{{ x }}</td>
+    {% elif k == 'net_pnl' %}<td class="n {{ 'pos' if x > 0 else 'neg' }}">{{ x|num }}</td>
+    {% else %}<td class="n">{{ x|num }}</td>{% endif %}{% endfor %}</tr>{% endfor %}
+  </table></div>
+{% endif %}
+
+<div class="card"><h2>Reproducibility</h2>
+  <dl class="kv">
+    <dt>run id</dt><dd>{{ run_id }}</dd>
+    <dt>command</dt><dd><code>{{ meta.command }}</code></dd>
+    <dt>code</dt><dd>{{ meta.code.git_commit }} · ctlab {{ meta.code.ctlab_version }} · uv.lock {{ meta.code.uv_lock_sha256 }}</dd>
+    {% if meta.data %}<dt>data</dt><dd>{{ meta.data.rows|num }} bars · {{ meta.data.first|ts }} → {{ meta.data.last|ts }} · sha256 {{ meta.data.sha256 }}</dd>{% endif %}
+    {% if meta.holdout_start %}<dt>holdout from</dt><dd>{{ meta.holdout_start|ts }}</dd>{% endif %}
+  </dl>
+  <details><summary class="muted">parameters, engine and cost model</summary>
+    <pre>{{ {"params": meta.params or meta.best_params or meta.final_params, "engine": meta.engine,
+           "cost_model": meta.cost_model, "optimization": meta.optimization_settings}|tojson_pretty }}</pre></details>
+</div>
+{% endblock %}
