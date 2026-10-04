@@ -23,6 +23,8 @@ git archive --format=tar HEAD | ssh "$HOST" "set -e; cd '$DEST'
 ssh "$HOST" "cd '$DEST' && if [ ! -f .env ]; then
     cp .env.example .env && chmod 600 .env &&
     sed -i \"s/^PUID=.*/PUID=\$(id -u)/; s/^PGID=.*/PGID=\$(id -g)/\" .env &&
-    echo 'created .env from .env.example (fill in cTrader credentials later)'; fi"
+    echo 'created .env from .env.example (fill in cTrader credentials later)'; fi
+  # /volume1/docker hands out inherited ACLs (rwx for everyone): strip them, secrets stay 0600
+  setfacl -b .env 2>/dev/null || true; chmod 600 .env"
 ssh "$HOST" "cd '$DEST' && GIT_COMMIT=$COMMIT docker compose up -d --build && docker compose ps"
 echo "Deployed ctrader-lab @ $COMMIT to $HOST:$DEST"
