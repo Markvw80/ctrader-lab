@@ -11,13 +11,14 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   exit 1
 fi
 COMMIT=$(git rev-parse --short HEAD)
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-git archive --format=tar HEAD | tar -x -C "$TMP"
 
 ssh "$HOST" "mkdir -p '$DEST/data/raw' '$DEST/data/parquet' '$DEST/results'"
-# Code only: data/, results/ and .env on the NAS are never touched or deleted.
-rsync -a --delete --exclude '/data/' --exclude '/results/' --exclude '/.env' "$TMP/" "$HOST:$DEST/"
+# Replace the code only: data/, results/ and .env on the NAS are never touched or deleted.
+# (UGOS restricts rsync, so: remove old code inside $DEST, then unpack the commit with tar.)
+git archive --format=tar HEAD | ssh "$HOST" "set -e; cd '$DEST'
+  case \"\$(pwd)\" in */ctrader-lab) ;; *) echo 'refusing: unexpected directory' >&2; exit 1;; esac
+  find . -mindepth 1 -maxdepth 1 ! -name data ! -name results ! -name .env -exec rm -rf {} +
+  tar -x"
 
 ssh "$HOST" "cd '$DEST' && if [ ! -f .env ]; then
     cp .env.example .env && chmod 600 .env &&

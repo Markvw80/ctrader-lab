@@ -25,7 +25,7 @@ De NAS heeft geen git nodig. Vanaf je Mac (met SSH-host `nas` in `~/.ssh/config`
 
 Dit script:
 1. weigert als er niet-gecommitte wijzigingen zijn (gedeployde code = altijd een commit);
-2. kopieert de code van die commit naar `/volume1/docker/ctrader-lab` (rsync). `data/`,
+2. kopieert de code van die commit naar `/volume1/docker/ctrader-lab` (tar via SSH). `data/`,
    `results/` en `.env` op de NAS worden nooit aangeraakt;
 3. maakt bij de eerste keer `.env` aan uit `.env.example` (rechten 600, PUID/PGID van jouw
    NAS-gebruiker);
