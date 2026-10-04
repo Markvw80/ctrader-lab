@@ -29,9 +29,11 @@ costs:
     model: hourly                    # per UTC hour, calibrated from API ticks
     default_points: 20               # 0.20 USD fallback until calibrated
   swap:
-    # Conservative placeholders (both sides cost money). Replaced by API values.
-    long_per_lot: -50.0              # USD per lot per night
-    short_per_lot: -20.0
+    # Conservative placeholders (both sides cost money). Replaced by API values
+    # (calculation: pips | percentage, as delivered by the broker).
+    calculation: usd_per_lot         # per lot per night
+    long: -50.0
+    short: -20.0
     triple_day: wednesday
 
 # Strategies trade London and New York. Asia is kept as a reporting bucket only.
