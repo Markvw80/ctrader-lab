@@ -287,10 +287,108 @@ def api_refresh_token() -> None:
     run(job)
 
 
+def _parse_params(strategy_cls, items: list[str]) -> dict:
+    specs = strategy_cls.param_specs()
+    out = {}
+    for item in items:
+        if "=" not in item:
+            raise typer.BadParameter(f"--param expects name=value, got {item!r}")
+        k, v = item.split("=", 1)
+        if k not in specs:
+            raise typer.BadParameter(f"unknown parameter {k!r}; available: {sorted(specs)}")
+        out[k] = specs[k].parse(v)
+    return out
+
+
 @app.command()
-def backtest(strategy: str, symbol: str = "XAUUSD", timeframe: str = "M1") -> None:
-    """Run a single backtest."""
-    _todo(3)
+def strategies() -> None:
+    """List available strategies and their parameters."""
+    from ctlab.strategy.base import all_strategies
+
+    for name, cls in sorted(all_strategies().items()):
+        typer.echo(f"{name}  (timeframe {cls.timeframe})")
+        for k, p in cls.param_specs().items():
+            rng = f"{p.choices}" if p.kind == "choice" else f"[{p.low}, {p.high}]"
+            typer.echo(f"    {k:<20} {p.kind:<6} default={p.default!s:<8} range={rng}  {p.doc}")
+
+
+@app.command()
+def backtest(
+    strategy: str,
+    symbol: str = "XAUUSD",
+    start: str | None = typer.Option(None, help="UTC, e.g. 2024-01-01"),
+    end: str | None = typer.Option(None, help="UTC, exclusive"),
+    param: list[str] = typer.Option([], "--param", "-p", help="name=value, repeatable"),
+    exec_tf: str | None = typer.Option(None, help="Execution timeframe (default from settings)"),
+    spread_stat: str | None = typer.Option(None, help="median | p90"),
+    balance: float | None = None,
+    risk: float | None = typer.Option(None, help="Risk per trade in %"),
+    daily_limit: float | None = typer.Option(None, help="Daily loss limit in %"),
+    save: bool = typer.Option(True, help="Store the run under results/runs"),
+) -> None:
+    """Run a single backtest and print the metrics."""
+    from ctlab.engine.runner import backtest as run_bt
+    from ctlab.engine.runner import load_inputs
+    from ctlab.report.metrics import breakdowns, compute_metrics
+    from ctlab.runs.registry import data_fingerprint, new_run_id, save_run
+    from ctlab.strategy.base import get_strategy
+
+    cls = get_strategy(strategy)
+    params = _parse_params(cls, param)
+    strat = cls(**params)
+    inp = load_inputs(symbol, _parse_utc(start) if start else None, _parse_utc(end) if end else None,
+                      exec_tf, spread_stat,
+                      {"initial_balance": balance, "risk_per_trade_pct": risk,
+                       "daily_loss_limit_pct": daily_limit})
+    res = run_bt(strat, inp)
+    m = compute_metrics(res, inp.sessions)
+    b = breakdowns(res, inp.sessions)
+    _print_metrics(m, b)
+    if save:
+        rid = new_run_id(strategy)
+        save_run(rid, "backtest", {
+            "strategy": strategy, "params": strat.params, "symbol": symbol,
+            "strategy_timeframe": res.strategy_timeframe, "exec_timeframe": res.exec_timeframe,
+            "requested_range": [start, end], "data": data_fingerprint(inp.bars),
+            "engine": inp.cfg, "cost_model": inp.cost, "spread_stat": inp.spread_stat,
+        }, m, {"trades": res.trades, "equity": res.equity, **{f"breakdown_{k}": v for k, v in b.items()}})
+        typer.echo(f"run id: {rid}")
+
+
+@app.command()
+def check(
+    strategy: str,
+    symbol: str = "XAUUSD",
+    start: str | None = None,
+    end: str | None = None,
+    param: list[str] = typer.Option([], "--param", "-p"),
+) -> None:
+    """Look-ahead check: indicators and trades must not depend on future data."""
+    from ctlab.engine.runner import load_inputs
+    from ctlab.strategy.base import get_strategy
+    from ctlab.strategy.causality import check_strategy
+
+    cls = get_strategy(strategy)
+    inp = load_inputs(symbol, _parse_utc(start) if start else None, _parse_utc(end) if end else None)
+    rep = check_strategy(cls, _parse_params(cls, param), inp.bars, inp.cost, inp.sessions)
+    typer.echo(f"{rep.checks} checks: {'OK' if rep.ok else 'LOOK-AHEAD DETECTED'}")
+    for p in rep.problems:
+        typer.echo(f"  - {p}")
+    if not rep.ok:
+        raise typer.Exit(1)
+
+
+def _print_metrics(m: dict, b: dict) -> None:
+    keys = ["trades", "net_profit", "return_pct", "profit_factor", "win_rate_pct", "avg_trade",
+            "avg_r", "max_drawdown", "max_drawdown_pct", "sharpe", "long_trades", "short_trades"]
+    for k in keys:
+        typer.echo(f"  {k:<18} {m[k]}")
+    typer.echo(f"  {'costs':<18} {m['costs']}")
+    typer.echo(f"  {'exit_reasons':<18} {m['exit_reasons']}")
+    typer.echo(f"  {'engine':<18} {m['engine']}")
+    for name, df in b.items():
+        typer.echo(f"\nper {name}:")
+        typer.echo(str(df))
 
 
 @app.command()

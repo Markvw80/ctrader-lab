@@ -10,10 +10,10 @@ weigert tenzij `CTRADER_ENV=demo`.
 |---|---|---|
 | 1 | Structuur, Docker, compose | klaar |
 | 2 | Datalaag + CSV-import | klaar |
-| 3 | Backtest-engine + tests | – |
+| 3 | Backtest-engine + tests | klaar |
 | 4 | Optimalisatie + walk-forward | – |
 | 5 | Rapportage + webpagina | – |
-| 6 | cTrader Open API | – |
+| 6 | cTrader Open API | code klaar, wacht op API-toegang |
 
 ## Op de NAS starten (UGREEN DXP2800)
 
@@ -119,7 +119,79 @@ uv run ctlab info
 
 Alleen in `.env` (staat in `.gitignore`). Nooit in code, config of git.
 
+## Backtest
+
+```sh
+docker compose exec lab ctlab strategies                       # strategieën + parameters
+docker compose exec lab ctlab backtest session_breakout --start 2023-01-01 --end 2025-01-01 -p rr=2.0
+docker compose exec lab ctlab backtest mean_reversion --spread-stat p90 --risk 0.25
+docker compose exec lab ctlab check mean_reversion              # look-ahead-controle
+```
+
+Elke run krijgt een id en een map `results/runs/<id>/` met `meta.json` (strategie, parameters,
+symbool, timeframes, gevraagde en werkelijke datarange, data-fingerprint, accountinstellingen,
+volledig kostenmodel, git-commit, uv.lock-hash, commando), `metrics.json`, trades, equity en
+uitsplitsingen per maand, weekdag en sessie.
+
+### Hoe de engine rekent
+
+- **Twee timeframes.** De strategie beslist op haar eigen timeframe (bijv. M15); fills, SL/TP en
+  kosten worden per M1-candle gesimuleerd.
+- **Geen look-ahead.** Een beslissing op de slotkoers van candle *j* wordt uitgevoerd op de open
+  van de eerste M1-candle ná het sluiten van *j*. De strategie ziet alleen data t/m *j*.
+- **Bid/ask.** Candles zijn bid. Ask = bid + spread (per uur New York-tijd; na `calibrate-spread`
+  gemeten uit echte ticks). Long koopt op ask en verkoopt op bid, short omgekeerd.
+- **Conservatief:** SL en TP in dezelfde candle telt als SL; op de candle waarin een
+  stop/limit-order vult wordt alleen SL gecontroleerd; opent de koers voorbij de SL, dan vult
+  het op de open. Slippage (standaard 2 ticks) op market, stop-entry en SL; niet op TP/limit.
+- **Kosten:** commissie per kant (op notional, per lot of %), swap per rollover (17:00 New York,
+  drievoudig op woensdag, niet in het weekend), spread en slippage. Alles staat per trade apart.
+- **Risico:** lotgrootte = risico% van equity / (verlies per lot bij de SL incl. slippage en
+  commissie), naar beneden afgerond op de lotstap; ook begrensd door `max_leverage`.
+  Dagelijkse verlieslimiet per handelsdag (start 17:00 New York): bij overschrijding wordt de
+  positie bij de volgende open gesloten en worden nieuwe orders die dag geweigerd.
+- Eén positie tegelijk; zodra een positie opent vervallen andere pending orders (OCO).
+
 ## Nieuwe strategie toevoegen
 
-Wordt uitgewerkt in fase 3. In het kort: één bestand in `src/ctlab/strategy/`, erft van
-`Strategy`, declareert getypeerde parameters met bereik, en implementeert `on_bar`.
+1. Maak een bestand in `src/ctlab/strategies/`, bijvoorbeeld `mijn_strategie.py`:
+
+```python
+import numpy as np
+import polars as pl
+
+from ctlab.strategy.base import Context, Strategy, register
+from ctlab.strategy.params import FloatParam, IntParam
+
+
+@register
+class MijnStrategie(Strategy):
+    name = "mijn_strategie"
+    timeframe = "M15"
+    warmup_bars = 50
+
+    fast = IntParam(10, 3, 50, doc="snelle EMA")
+    slow = IntParam(40, 20, 200, doc="trage EMA")
+    sl_usd = FloatParam(8.0, 2.0, 30.0, step=0.5)
+    rr = FloatParam(2.0, 0.5, 4.0, step=0.1)
+
+    def prepare(self, bars: pl.DataFrame) -> dict[str, np.ndarray]:
+        # Vectorized, maar ALLEEN causaal: geen shift(-n), geen centered windows.
+        c = pl.col("close")
+        df = bars.select(c.ewm_mean(span=self.fast, adjust=False).alias("f"),
+                         c.ewm_mean(span=self.slow, adjust=False).alias("s"))
+        return {"fast": df["f"].to_numpy(), "slow": df["s"].to_numpy()}
+
+    def on_bar(self, ctx: Context) -> None:
+        f, s = ctx.bars.fast, ctx.bars.slow          # alleen t/m de huidige candle
+        crossed_up = f[-2] <= s[-2] and f[-1] > s[-1]
+        if ctx.position is None and crossed_up and ctx.now("sess_london"):
+            ctx.buy(self.sl_usd, self.sl_usd * self.rr)
+```
+
+2. Beschikbaar in `prepare`/`ctx`: `open high low close tick_volume ts`, plus `trading_day`,
+   `ny_minute`, `ny_weekday`, `sess_asia`, `sess_london`, `sess_newyork`.
+3. Acties: `buy/sell(sl, tp)`, `buy_stop/sell_stop/buy_limit/sell_limit(price, sl, tp, expire_bars)`,
+   `close()`, `cancel_all()`. SL/TP zijn **afstanden in prijs** vanaf de werkelijke fill.
+4. Controleer: `ctlab check mijn_strategie` (moet OK zijn) en `uv run pytest`.
+5. Deploy: commit + push, op de NAS `./scripts/deploy.sh`.

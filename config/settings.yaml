@@ -8,8 +8,13 @@ account:
   initial_balance: 10000
   risk_per_trade_pct: 0.5
   daily_loss_limit_pct: 2.0
+  max_leverage: 20         # notional cap = equity * max_leverage
   # Trading day starts at the New York 17:00 rollover (21:00/22:00 UTC, DST-aware).
   day_start: {tz: "America/New_York", time: "17:00"}
+
+backtest:
+  exec_timeframe: M1      # SL/TP/fills are simulated on this timeframe
+  spread_stat: median     # median | p90 (stress test with wider spreads)
 
 optimization:
   holdout_pct: 20
