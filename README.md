@@ -179,8 +179,9 @@ Eenmalig een access token aanmaken:
 1. https://openapi.ctrader.com/apps → jouw app → **Playground**
 2. Scope **accounts** (alleen lezen: genoeg voor research, kan geen orders plaatsen) → *Get token*
 3. Log in met je cTrader ID en geef toegang tot je (demo)account
-4. Zet `CTRADER_ACCESS_TOKEN` en `CTRADER_REFRESH_TOKEN` in `.env` op de NAS en herstart:
-   `docker compose up -d`
+4. Vanaf je Mac, in je eigen terminal: `./scripts/set-nas-secrets.sh`. Het vraagt de waarden
+   met verborgen invoer (plakken met de kopieerknoppen uit de Playground), zet ze in de NAS-`.env`
+   (0600), herstart de container en draait `ctlab api check`.
 
 ```sh
 docker compose exec lab ctlab api check                 # stap voor stap: app, token, account
