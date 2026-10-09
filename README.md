@@ -13,7 +13,7 @@ weigert tenzij `CTRADER_ENV=demo`.
 | 3 | Backtest-engine + tests | klaar |
 | 4 | Optimalisatie + walk-forward | klaar |
 | 5 | Rapportage + webpagina | klaar |
-| 6 | cTrader Open API | code klaar, wacht op API-toegang |
+| 6 | cTrader Open API | code klaar, app actief |
 
 ## Op de NAS starten (UGREEN DXP2800)
 
@@ -172,6 +172,29 @@ Werkwijze: ontwikkel en optimaliseer alleen op de onderzoeksperiode, beoordeel m
   Alle drempels staan in `config/settings.yaml` onder `optimization`.
 - Elke Optuna-studie staat als `optuna.db` (SQLite) in de run-map; de seed staat in de
   settings, dus een run is reproduceerbaar.
+
+## cTrader Open API
+
+Eenmalig een access token aanmaken:
+1. https://openapi.ctrader.com/apps → jouw app → **Playground**
+2. Scope **accounts** (alleen lezen: genoeg voor research, kan geen orders plaatsen) → *Get token*
+3. Log in met je cTrader ID en geef toegang tot je (demo)account
+4. Zet `CTRADER_ACCESS_TOKEN` en `CTRADER_REFRESH_TOKEN` in `.env` op de NAS en herstart:
+   `docker compose up -d`
+
+```sh
+docker compose exec lab ctlab api check                 # stap voor stap: app, token, account
+docker compose exec lab ctlab api accounts              # account-ids -> CTRADER_ACCOUNT_ID in .env
+docker compose exec lab ctlab api symbol                # echte contract-, commissie- en swapwaarden
+docker compose exec lab ctlab data calibrate-spread --days 20
+docker compose exec lab ctlab data fetch --start 2020-01-01
+docker compose exec lab ctlab data fetch                # later: alleen nieuwe candles
+docker compose exec lab ctlab api refresh-token         # token verloopt na ~30 dagen
+```
+
+Broker-waarden (symbol spec en gemeten spread) komen in `data/broker/XAUUSD.json` en gaan voor
+op `config/symbols/XAUUSD.yaml`. Een vernieuwd token komt in `data/broker/.tokens.json` (0600)
+en gaat voor op `.env`.
 
 ## Rapporten en webpagina
 

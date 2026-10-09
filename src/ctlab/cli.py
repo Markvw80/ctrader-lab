@@ -238,6 +238,39 @@ def _save_report(rep: Report, symbol: str, tf: str) -> None:
     (d / "_validation.json").write_text(json.dumps(rep.to_dict(), indent=2, default=str))
 
 
+@api_app.command("check")
+def api_check() -> None:
+    """Step-by-step connection test: app credentials, access token, account."""
+    from ctlab.broker.client import ApiError, Session
+    from ctlab.config import tokens
+
+    async def job():
+        sess = Session(env())
+        try:
+            await sess.connect(live=False)
+            typer.echo("1. app credentials (client id/secret): OK")
+            if len(tokens()[0]) < 10:
+                typer.echo("2. access token: MISSING -> generate one (see README) and set CTRADER_ACCESS_TOKEN")
+                raise SystemExit(1)
+            accounts = await sess.accounts()
+            typer.echo(f"2. access token: OK ({len(accounts)} account(s))")
+            for a in accounts:
+                typer.echo(f"     {a.ctidTraderAccountId:>12}  {'LIVE' if a.isLive else 'demo'}  login {a.traderLogin}")
+            if not env().ctrader_account_id:
+                typer.echo("3. CTRADER_ACCOUNT_ID: not set -> pick one of the ids above")
+                raise SystemExit(1)
+        except ApiError as ex:
+            typer.echo(f"   FAILED: {ex}")
+            raise SystemExit(1) from None
+        finally:
+            sess.close()
+        async with _session() as s2:
+            sym = await s2.symbol("XAUUSD")
+            typer.echo(f"3. account {env().ctrader_account_id}: OK, XAUUSD symbolId {sym.symbolId}")
+
+    run(job)
+
+
 @api_app.command("accounts")
 def api_accounts() -> None:
     """List trading accounts available to the access token."""
